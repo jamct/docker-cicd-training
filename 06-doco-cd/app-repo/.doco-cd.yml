@@ -1,0 +1,8 @@
+name: demo
+reference: main
+compose_files:
+  - ./doco/docker-compose.yml
+
+environment:
+  APP_HOST: doco-demo.example.org
+  APP_MESSAGE: "Version 1 – deployt von Doco-CD"

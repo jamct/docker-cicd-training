@@ -1,0 +1,62 @@
+# GitHub Actions: Image bauen -> SBOM mit Trivy erzeugen -> als Artefakt ablegen
+#
+# Einbauen: in einem Repository mit Dockerfile im Hauptordner ablegen als
+#   .github/workflows/sbom.yml
+
+name: SBOM
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Das Image wird nur auf dem Runner gebaut, nicht gepusht
+      - name: Image bauen
+        run: docker build -t app:${{ github.sha }} .
+
+      - name: SBOM erzeugen (CycloneDX)
+        run: |
+          # Trivy läuft als Container und liest das Image über den Docker-Socket
+          # des Runners, genau wie der sbom-scanner auf dem Server.
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/out" \
+            aquasec/trivy:0.74.0 image --image-src docker \
+            --format cyclonedx --output /out/sbom.cdx.json \
+            app:${{ github.sha }}
+
+          # Kurzer Überblick im Log: wie viele Komponenten stecken drin?
+          echo "Komponenten: $(jq '.components | length' sbom.cdx.json)"
+
+      # Artefakte gehören zum Lauf und lassen sich dort herunterladen
+      - name: SBOM als Artefakt ablegen
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.cdx.json
+          retention-days: 90
+
+      # ── Optional: zusätzlich an Dependency-Track schicken ────────────────────
+      # Dafür in den Repo-Settings (Secrets and variables -> Actions) anlegen:
+      #   Variable DTRACK_HOST    = dtrack.example.org   (ohne https://)
+      #   Secret   DTRACK_API_KEY = API-Key des Teams "Automation"
+      # Dann die Kommentarzeichen vor dem Schritt entfernen (Einrückung behalten).
+      #
+      # - name: SBOM an Dependency-Track hochladen
+      #   env:
+      #     DTRACK_API_KEY: ${{ secrets.DTRACK_API_KEY }}
+      #   run: |
+      #     curl --fail-with-body -X POST "https://${{ vars.DTRACK_HOST }}/api/v1/bom" \
+      #       -H "X-Api-Key: $DTRACK_API_KEY" \
+      #       -F autoCreate=true \
+      #       -F "projectName=${{ github.event.repository.name }}" \
+      #       -F "projectVersion=${{ github.sha }}" \
+      #       -F "bom=@sbom.cdx.json"

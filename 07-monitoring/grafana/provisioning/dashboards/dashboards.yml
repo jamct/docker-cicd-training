@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: kurs
+    folder: Docker-Kurs
+    type: file
+
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,19 @@
+name: pipeline-demo
+
+services:
+  app:
+    image: ${IMAGE}:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      GREETING: ${GREETING:-Hallo aus der Pipeline}
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.pipeline-demo.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.pipeline-demo.entrypoints=websecure
+      - traefik.http.services.pipeline-demo.loadbalancer.server.port=3000
+
+networks:
+  proxy:
+    external: true

@@ -1,0 +1,103 @@
+# GitLab CI: gleicher Ablauf wie die GitHub-Action, Registry = GitLab Container Registry
+stages: [test, build, deploy]
+
+variables:
+  IMAGE: $CI_REGISTRY_IMAGE          # z. B. registry.gitlab.com/gruppe/pipeline-demo
+
+test:
+  stage: test
+  image: node:22-alpine
+  script:
+    - cd app
+    - npm test
+
+build:
+  stage: build
+  image: docker:28
+  services:
+    - docker:28-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - docker build --build-arg APP_VERSION=$CI_COMMIT_SHA -t $IMAGE:$CI_COMMIT_SHA -t $IMAGE:latest .
+    - docker push $IMAGE:$CI_COMMIT_SHA
+    - docker push $IMAGE:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ── Optional: SBOM an Dependency-Track schicken (siehe Kapitel 09) ────────────
+# Nach dem Build erzeugt Trivy eine Stückliste (SBOM, Format CycloneDX) des
+# neuen Images und lädt sie per API zu Dependency-Track hoch. Der Job steht in
+# der Stage "deploy" und startet dank "needs" direkt nach dem Build. Er läuft
+# also gleichzeitig mit dem Deployment und hält es nicht auf.
+#
+# Einschalten:
+#   1. Unter Settings -> CI/CD -> Variables anlegen:
+#        DTRACK_HOST    = dtrack.example.org   (ohne https://)
+#        DTRACK_API_KEY = API-Key des Teams "Automation" (Häkchen bei "Masked")
+#   2. Den ganzen Block unten markieren und die Kommentarzeichen entfernen
+#      (in VS Code: Strg+# bzw. Cmd+/). Die Einrückung muss erhalten bleiben.
+#
+# sbom:
+#   stage: deploy
+#   needs: [build]
+#   image:
+#     name: aquasec/trivy:0.74.0
+#     entrypoint: [""]      # sonst startet das Image sofort "trivy" statt einer Shell
+#   variables:
+#     # Zugangsdaten, damit Trivy das Image aus der GitLab-Registry laden kann
+#     TRIVY_USERNAME: $CI_REGISTRY_USER
+#     TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
+#   script:
+#     # SBOM des gerade gepushten Images erzeugen
+#     - trivy image --format cyclonedx --output sbom.cdx.json $IMAGE:$CI_COMMIT_SHA
+#     # Das Trivy-Image basiert auf Alpine, curl holen wir uns dazu
+#     - apk add --no-cache curl
+#     # Gleicher Aufruf wie in Kapitel 09, nur mit Werten aus der Pipeline:
+#     # Projektname = Projekt in GitLab, Version = Commit-SHA (wie der Image-Tag).
+#     # autoCreate=true legt das Projekt beim ersten Mal selbst an.
+#     - |
+#       curl --fail-with-body -X POST "https://$DTRACK_HOST/api/v1/bom" \
+#         -H "X-Api-Key: $DTRACK_API_KEY" \
+#         -F autoCreate=true \
+#         -F "projectName=$CI_PROJECT_NAME" \
+#         -F "projectVersion=$CI_COMMIT_SHA" \
+#         -F "bom=@sbom.cdx.json"
+#   artifacts:
+#     paths: [sbom.cdx.json]  # SBOM zum Herunterladen aufheben
+#   rules:
+#     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+deploy:
+  stage: deploy
+  # Enthält docker CLI und das Compose-Plugin. Kein docker:dind nötig:
+  # Wir benutzen den Docker-Daemon auf dem Server, nicht einen im Runner.
+  image: docker:28
+  environment:
+    name: production
+    url: https://$APP_HOST
+  variables:
+    # Jeder docker-Befehl in diesem Job läuft über SSH auf dem Server
+    DOCKER_HOST: ssh://$DEPLOY_USER@$DEPLOY_HOST
+    # Werte für deploy/docker-compose.yml (APP_HOST, GREETING als CI/CD-Variablen anlegen)
+    TAG: $CI_COMMIT_SHA
+  before_script:
+    - apk add --no-cache openssh-client
+    - install -m 700 -d ~/.ssh
+    # SSH_PRIVATE_KEY als Variable vom Typ "File" anlegen
+    - cp "$SSH_PRIVATE_KEY" ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+    # Eine SSH-Verbindung für alle docker-Befehle wiederverwenden (schneller)
+    - printf 'Host *\n  ControlMaster auto\n  ControlPath ~/.ssh/cm-%%r@%%h:%%p\n  ControlPersist 60s\n' > ~/.ssh/config
+    - docker version   # zeigt Client (Runner) und Server (dein Server)
+    # Anmeldedaten bleiben im Runner; der Server bekommt sie nur für den Pull
+    - echo "$CI_DEPLOY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_DEPLOY_USER" --password-stdin
+  script:
+    - docker compose -f deploy/docker-compose.yml pull
+    - docker compose -f deploy/docker-compose.yml up -d --remove-orphans
+    - docker compose -f deploy/docker-compose.yml ps
+    - docker image prune -f   # alte Images auf dem Server aufräumen
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

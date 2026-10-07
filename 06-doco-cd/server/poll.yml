@@ -1,0 +1,3 @@
+- url: https://github.com/DEIN-NAME/doco-cd-demo.git  
+  reference: main
+  interval: 60

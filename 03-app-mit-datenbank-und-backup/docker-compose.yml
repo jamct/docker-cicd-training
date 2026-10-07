@@ -1,0 +1,86 @@
+name: wordpress
+
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD_FILE: /run/secrets/db_password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+    secrets:
+      - db_password
+      - db_root_password
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - wp-backend
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  wordpress:
+    image: wordpress:6-apache
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - wp-content:/var/www/html
+    networks:
+      - proxy
+      - wp-backend
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wordpress.rule=Host(`${WP_HOST}`)
+      - traefik.http.routers.wordpress.entrypoints=websecure
+      - traefik.docker.network=proxy
+
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: Europe/Berlin
+      BACKUP_CRON: ${BACKUP_CRON}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY} # Ziel
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD} # Passwort fürs Backup
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID} # S3-Zugangsdaten
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    secrets:
+      - db_root_password
+    volumes:
+      - wp-content:/data/wp-content:ro
+      - ./restore:/restore
+    networks:
+      - wp-backend
+      - default
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  db_root_password:
+    file: ./secrets/db_root_password.txt
+
+volumes:
+  db-data:
+  wp-content:
+
+networks:
+  proxy:
+    external: true
+  wp-backend:
+    internal: true

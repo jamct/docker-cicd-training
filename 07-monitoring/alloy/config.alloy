@@ -1,0 +1,112 @@
+
+
+// Alle laufenden Container über den Docker-Socket finden
+discovery.docker "container" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Aus den Docker-Infos lesbare Labels machen.
+discovery.relabel "container" {
+  targets = []
+
+  // Containername
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // Compose-Projekt
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+
+  // Compose-Service
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+
+  // stdout oder stderr?
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+}
+
+// Logs der gefundenen Container
+loki.source.docker "container" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.container.targets
+  relabel_rules = discovery.relabel.container.rules
+  forward_to    = [loki.write.lokal.receiver]
+}
+
+// Logs an Loki schicken
+loki.write "lokal" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// CPU, RAM, Netzwerk, Platte
+prometheus.exporter.cadvisor "container" {
+  docker_host = "unix:///var/run/docker.sock"
+  docker_only = true
+  storage_duration = "2m"
+}
+
+// Node-Exporter
+prometheus.exporter.unix "server" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/sys"
+  rootfs_path = "/rootfs"
+}
+
+// Regelmäßig abfragen
+prometheus.scrape "container" {
+  targets         = prometheus.exporter.cadvisor.container.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.relabel.container.receiver]
+}
+
+// Container-Metriken aufräumen
+prometheus.relabel "container" {
+  forward_to = [prometheus.remote_write.lokal.receiver]
+
+  // Containername: name="grafana" ──► container="grafana"
+  rule {
+    source_labels = ["name"]
+    target_label  = "container"
+  }
+
+  // Compose-Projekt und -Service übernehmen
+  rule {
+    source_labels = ["container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+  rule {
+    source_labels = ["container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+
+  // Labels aufräumen
+  rule {
+    action = "labeldrop"
+    regex  = "container_label_.*|name"
+  }
+}
+
+prometheus.scrape "server" {
+  targets         = prometheus.exporter.unix.server.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.lokal.receiver]
+}
+
+// An Prometheus schicken
+prometheus.remote_write "lokal" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}

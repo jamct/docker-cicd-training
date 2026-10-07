@@ -1,0 +1,9 @@
+# Steckbrief des Helm-Charts
+apiVersion: v2
+name: nginx-demo
+description: nginx mit einer Beispielseite hinter Traefik – Demo für ArgoCD
+type: application
+# Version des Charts selbst (bei Änderungen am Chart hochzählen)
+version: 0.1.0
+# Version der App darin (hier: nginx)
+appVersion: "1.29"

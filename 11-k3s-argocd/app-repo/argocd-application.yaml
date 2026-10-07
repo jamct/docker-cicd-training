@@ -1,0 +1,39 @@
+# Sagt ArgoCD, WAS es WOHIN deployen soll:
+#   Quelle: Helm-Chart im Ordner charts/nginx-demo dieses Git-Repos
+#   Ziel:   derselbe Cluster, in dem ArgoCD läuft, Namespace nginx-demo
+#
+# Wird einmalig von Hand angelegt:
+#   kubectl apply -f argocd-application.yaml
+# Danach reicht ein git push – ArgoCD holt sich Änderungen selbst.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-demo
+  # Applications liegen immer im Namespace von ArgoCD
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    # ANPASSEN: Adresse des eigenen Git-Repositories
+    repoURL: https://github.com/jamct/k3s-argocd-demo.git
+    targetRevision: main # Branch, Tag oder Commit
+    path: charts/nginx-demo # Ordner mit dem Helm-Chart
+    helm:
+      valueFiles:
+        - values.yaml
+      # Einzelne Werte lassen sich auch hier überschreiben, z. B.:
+      # valuesObject:
+      #   replicaCount: 3
+
+  destination:
+    # "Dieser Cluster" – ArgoCD deployt in den Cluster, in dem es selbst läuft
+    server: https://kubernetes.default.svc
+    namespace: nginx-demo
+
+  syncPolicy:
+    automated:
+      prune: true # im Git gelöschte Objekte auch im Cluster löschen
+      selfHeal: true # Handänderungen im Cluster wieder auf Git-Stand zurücksetzen
+    syncOptions:
+      - CreateNamespace=true # Namespace nginx-demo bei Bedarf anlegen

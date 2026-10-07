@@ -1,0 +1,31 @@
+# ArgoCD als Helm-Chart installieren.
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: argocd
+  namespace: kube-system
+spec:
+  repo: https://argoproj.github.io/argo-helm
+  chart: argo-cd
+  version: 10.9.4
+  targetNamespace: argocd
+  createNamespace: true
+  valuesContent: |-
+    global:
+      domain: __ARGOCD_HOST__
+
+    # ArgoCD selbst ohne TLS betreiben – das HTTPS übernimmt Traefik davor.
+    configs:
+      params:
+        server.insecure: true
+
+    # Weboberfläche über Traefik veröffentlichen, Zertifikat von Let's Encrypt
+    server:
+      ingress:
+        enabled: true
+        ingressClassName: traefik
+        annotations:
+          traefik.ingress.kubernetes.io/router.entrypoints: websecure
+          traefik.ingress.kubernetes.io/router.tls: "true"
+          traefik.ingress.kubernetes.io/router.tls.certresolver: le

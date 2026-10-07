@@ -1,0 +1,213 @@
+{
+  "uid": "container-logs",
+  "title": "Container-Logs",
+  "description": "Logs aller Container aus Loki, filterbar nach Projekt, Container, stdout/stderr und Suchbegriff.",
+  "tags": ["docker", "kurs", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": true,
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "projekt",
+        "label": "Compose-Projekt",
+        "description": "Werte kommen direkt aus Loki: alle compose_project-Labels, die Alloy gesetzt hat.",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "query": {
+          "type": 1,
+          "label": "compose_project",
+          "stream": "",
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
+        "definition": "label_values(compose_project)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "container",
+        "label": "Container",
+        "description": "Zeigt nur Container des oben gewählten Projekts. Label 'container' setzt Alloy (config.alloy).",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "query": {
+          "type": 1,
+          "label": "container",
+          "stream": "{compose_project=~\"$projekt\"}",
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
+        "definition": "label_values({compose_project=~\"$projekt\"}, container)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "stream",
+        "label": "Ausgabe",
+        "description": "stdout = normale Ausgabe, stderr = Fehlerausgabe",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "query": {
+          "type": 1,
+          "label": "stream",
+          "stream": "",
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
+        "definition": "label_values(stream)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "suche",
+        "label": "Suche (Groß/klein egal)",
+        "type": "textbox",
+        "description": "Freitext, z. B. error oder GET /. Leer = alles anzeigen.",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "So funktioniert dieses Dashboard",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Oben filtern:** *Compose-Projekt* -> *Container* -> *Ausgabe* (stdout/stderr) -> *Suche*.  \nDie Auswahllisten fragt Grafana bei **Loki** ab. Die Labels `container`, `compose_project` und `stream` hängt **Alloy** an jede Logzeile (siehe `alloy/config.alloy`).  \nDie Abfrage dahinter (LogQL), schon mit deiner aktuellen Auswahl eingesetzt:  \n`{compose_project=~\"$projekt\", container=~\"$container\", stream=~\"$stream\"} |~ \"(?i)$suche\"`  \nTeil in `{ }` = *welche* Logs (nach Labels, schnell) · Teil danach = *Zeilenfilter* (durchsucht den Text, `(?i)` = Groß-/Kleinschreibung egal)."
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Anzahl Logzeilen pro Container",
+      "description": "Wie viele Zeilen (passend zur Suche) jeder Container pro Zeitabschnitt schreibt. Ausschläge = hier ist etwas los.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "expr": "sum by (container) (count_over_time({compose_project=~\"$projekt\", container=~\"$container\", stream=~\"$stream\"} |~ \"(?i)$suche\" [$__auto]))",
+          "legendFormat": "{{container}}",
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "Logs",
+      "description": "Neueste Zeile oben. Auf eine Zeile klicken zeigt alle Labels; mit der Lupe daneben lässt sich direkt danach filtern.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 18
+      },
+      "targets": [
+        {
+          "expr": "{compose_project=~\"$projekt\", container=~\"$container\", stream=~\"$stream\"} |~ \"(?i)$suche\"",
+          "refId": "A",
+          "maxLines": 1000,
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    }
+  ]
+}

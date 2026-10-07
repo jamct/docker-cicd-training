@@ -1,0 +1,98 @@
+#   https://dtrack.…/api/…  ─► api
+#   https://dtrack.…/…      ─► frontend
+name: dependency-track
+
+services:
+  apiserver:
+    image: ghcr.io/dependencytrack/apiserver:5.1.1
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    environment:
+      DT_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dtrack
+      DT_DATASOURCE_USERNAME: dtrack
+      DT_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - apiserver-data:/data
+    networks:
+      - proxy
+      - dtrack
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.dtrack-api.rule=Host(`${DTRACK_HOST}`) && PathPrefix(`/api`)
+      - traefik.http.routers.dtrack-api.entrypoints=websecure
+      - traefik.http.services.dtrack-api.loadbalancer.server.port=8080
+
+  frontend:
+    image: ghcr.io/dependencytrack/frontend:5.1.1
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      API_BASE_URL: https://${DTRACK_HOST}
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.dtrack.rule=Host(`${DTRACK_HOST}`)
+      - traefik.http.routers.dtrack.entrypoints=websecure
+      - traefik.http.services.dtrack.loadbalancer.server.port=8080
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dtrack
+      POSTGRES_USER: dtrack
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks:
+      - dtrack
+
+  # Erzeugt SBOMs aller laufenden Images und lädt sie an den API-Server hoch
+  sbom-scanner:
+    build: ./sbom-scanner
+    image: training/sbom-scanner:local
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - apiserver
+    environment:
+      DT_API_KEY: ${DT_API_KEY:-}
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-86400}
+      TZ: ${TZ}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - trivy-cache:/root/.cache
+      - trivy-tmp:/tmp
+    networks:
+      - dtrack
+      - default
+
+volumes:
+  apiserver-data:
+  postgres-data:
+  trivy-cache:
+  trivy-tmp:
+
+networks:
+  proxy:
+    external: true
+  dtrack:
+    internal: true

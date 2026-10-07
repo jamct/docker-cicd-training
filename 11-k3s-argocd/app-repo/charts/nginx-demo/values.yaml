@@ -1,0 +1,36 @@
+# Einstellungen für das Chart. Alles, was man anpassen möchte, steht hier –
+# die Dateien in templates/ muss man dafür nicht anfassen.
+# Nach einer Änderung: committen, pushen – ArgoCD spielt sie automatisch ein.
+
+# Wie viele nginx-Pods laufen sollen
+replicaCount: 2
+
+image:
+  repository: nginx
+  tag: "1.29-alpine"
+
+# Unter dieser Adresse ist die Seite erreichbar (DNS muss auf den k3s-Server zeigen)
+host: nginx.k3s.example.org
+
+# Zertifikats-Resolver aus der Traefik-Konfiguration (server/traefik-config.yaml).
+# Leer lassen ("") = Traefik nimmt sein selbst signiertes Standard-Zertifikat.
+certResolver: le
+
+# Routing-Variante:
+#   false = normales Kubernetes-Ingress (funktioniert mit jedem Ingress-Controller)
+#   true  = Traefik-eigene IngressRoute (mehr Möglichkeiten, aber nur mit Traefik)
+useIngressRoute: false
+
+# Inhalt der Beispielseite (wird in die ConfigMap geschrieben)
+page:
+  title: "Hallo aus k3s"
+  message: "Version 1 – deployt von ArgoCD"
+  color: "#2563eb"
+
+# Wie viel CPU/RAM ein Pod bekommt (requests) und maximal nutzen darf (limits)
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    memory: 64Mi

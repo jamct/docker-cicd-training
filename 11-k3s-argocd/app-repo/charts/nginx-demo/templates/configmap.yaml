@@ -1,0 +1,31 @@
+# ConfigMap = Konfigurationsdateien, die Kubernetes speichert und in Pods
+# einblendet. Hier liegt die HTML-Seite, die nginx ausliefert.
+# Die doppelten geschweiften Klammern sind Helm-Platzhalter,
+# die Werte kommen aus values.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-html
+  labels:
+    app.kubernetes.io/name: nginx-demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  index.html: |
+    <!doctype html>
+    <html lang="de">
+      <head>
+        <meta charset="utf-8">
+        <title>{{ .Values.page.title }}</title>
+        <style>
+          body { font-family: sans-serif; background: {{ .Values.page.color }}; color: white;
+                 display: grid; place-items: center; height: 100vh; margin: 0; }
+        </style>
+      </head>
+      <body>
+        <main>
+          <h1>{{ .Values.page.title }}</h1>
+          <p>{{ .Values.page.message }}</p>
+          <p><small>Release: {{ .Release.Name }} · Namespace: {{ .Release.Namespace }}</small></p>
+        </main>
+      </body>
+    </html>

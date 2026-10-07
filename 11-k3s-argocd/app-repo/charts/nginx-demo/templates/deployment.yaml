@@ -1,0 +1,54 @@
+# Deployment = "Es sollen immer N Pods mit diesem Image laufen."
+# Entspricht grob einem Service in docker-compose.yml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: nginx-demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # Über diese Labels findet das Deployment "seine" Pods
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nginx-demo
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nginx-demo
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        # Prüfsumme der ConfigMap: Ändert sich die Seite, ändert sich die Summe,
+        # und Kubernetes startet die Pods neu (Rolling Update ohne Ausfall).
+        checksum/html: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: nginx
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - name: http
+              containerPort: 80
+          # HTML-Seite aus der ConfigMap in den nginx-Ordner einblenden
+          # (wie der Bind-Mount ./html in 01-static-site)
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          # Erst wenn diese Prüfung klappt, bekommt der Pod Anfragen
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          # Klappt diese Prüfung dauerhaft nicht, wird der Container neu gestartet
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: html
+          configMap:
+            name: {{ .Release.Name }}-html

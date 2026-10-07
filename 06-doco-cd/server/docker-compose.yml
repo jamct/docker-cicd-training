@@ -1,0 +1,37 @@
+name: doco-cd
+
+services:
+  doco-cd:
+    image: ghcr.io/kimdre/doco-cd:0.121.0
+    container_name: doco-cd
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?WEBHOOK_SECRET in .env setzen}
+      GIT_ACCESS_TOKEN: ${GIT_ACCESS_TOKEN:-}
+      POLL_CONFIG_FILE: /etc/doco-cd/poll.yml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - data:/data
+      - ./poll.yml:/etc/doco-cd/poll.yml:ro
+    healthcheck:
+      test: ["CMD", "/doco-cd", "healthcheck"]
+      start_period: 15s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.doco-cd.rule=Host(`${DOCO_HOST}`) && PathPrefix(`/v1/webhook`)
+      - traefik.http.routers.doco-cd.entrypoints=websecure
+      - traefik.http.services.doco-cd.loadbalancer.server.port=80
+
+volumes:
+  data:
+
+networks:
+  proxy:
+    external: true

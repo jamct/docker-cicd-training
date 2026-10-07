@@ -1,0 +1,7 @@
+# Weist Podman an: Für diese Registry nach Cosign-Signaturen suchen.
+# Cosign legt sie als eigenes Artefakt neben das Image (Tag sha256-….sig).
+# Ohne diese Datei findet Podman keine Signatur und lehnt signierte Images ab.
+#   sudo cp ghcr-sigstore.yaml /etc/containers/registries.d/
+docker:
+  ghcr.io:
+    use-sigstore-attachments: true

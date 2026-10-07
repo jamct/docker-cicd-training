@@ -1,0 +1,105 @@
+name: wud
+
+services:
+  wud:
+    image: getwud/wud:9.2.0
+    container_name: wud
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TZ: ${TZ}
+      WUD_AUTH_ADMIN_USER: ${WUD_ADMIN_USER}
+      WUD_AUTH_ADMIN_PASSWORD: ${WUD_ADMIN_PASSWORD}
+      WUD_WATCHER_LOCAL_CRON: ${WUD_CRON}
+      WUD_LOG_LEVEL: ${WUD_LOG_LEVEL}
+
+      # wud bekommt die Compose-Datei, um sich selbst zu aktualisieren:
+      WUD_TRIGGER_DOCKERCOMPOSE_AUTO_FILE: /wud/stack/docker-compose.yml
+
+      WUD_TRIGGER_DOCKERCOMPOSE_AUTO_INCLUDEBYDEFAULT: "false"
+      WUD_TRIGGER_DOCKERCOMPOSE_AUTO_THRESHOLD: minor
+      WUD_TRIGGER_DOCKERCOMPOSE_AUTO_BACKUP: "true"
+      WUD_TRIGGER_DOCKERCOMPOSE_AUTO_PRUNE: "true"
+      WUD_TRIGGER_DOCKERCOMPOSE_AUTO_DRYRUN: "false"
+
+      # Updates per Klick: Trigger "dockercompose.manual"
+      # AUTO=false: WUD führt Update nie selbst aus, nur über den Update-Button.
+      # Container melden sich per Label an: wud.trigger.include=dockercompose.manual
+      WUD_TRIGGER_DOCKERCOMPOSE_MANUAL_FILE: /wud/stack/docker-compose.yml
+      WUD_TRIGGER_DOCKERCOMPOSE_MANUAL_AUTO: "false"
+      WUD_TRIGGER_DOCKERCOMPOSE_MANUAL_INCLUDEBYDEFAULT: "false"
+      WUD_TRIGGER_DOCKERCOMPOSE_MANUAL_BACKUP: "true"
+      WUD_TRIGGER_DOCKERCOMPOSE_MANUAL_PRUNE: "true"
+
+      # Benachrichtigungen: Auskommentieren und Topic in der .env setzen:
+      # WUD_TRIGGER_NTFY_KURS_URL: https://ntfy.sh
+      # WUD_TRIGGER_NTFY_KURS_TOPIC: ${NTFY_TOPIC}
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/wud/stack
+      - wud-store:/store
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wud.rule=Host(`${WUD_HOST}`)
+      - traefik.http.routers.wud.entrypoints=websecure
+      - traefik.http.services.wud.loadbalancer.server.port=3000
+      - wud.tag.include=^\d+\.\d+\.\d+$$
+      - wud.link.template=https://github.com/getwud/wud/releases/tag/$${major}.$${minor}.$${patch}
+
+  nginx-patch:
+    image: nginx:1.28.0
+    container_name: nginx-patch
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.nginx-patch.rule=Host(`${NGINX_PATCH_HOST}`)
+      - traefik.http.routers.nginx-patch.entrypoints=websecure
+      - wud.tag.include=^1\.28\.\d+$$
+      - wud.trigger.include=dockercompose.auto:patch
+      - wud.link.template=https://nginx.org/en/CHANGES-$${major}.$${minor}
+volumes:
+  wud-store:
+
+networks:
+  proxy:
+    external: true
+
+  # Optionales Beispiel: Minor-Updates automatisch einspielen
+  # nginx-minor:
+  #   image: nginx:1.27.0
+  #   container_name: nginx-minor
+  #   restart: unless-stopped
+  #   networks:
+  #     - proxy
+  #   labels:
+  #     - traefik.enable=true
+  #     - traefik.http.routers.nginx-minor.rule=Host(`${NGINX_MINOR_HOST}`)
+  #     - traefik.http.routers.nginx-minor.entrypoints=websecure
+  #     # Alles mit 1.x.y wird geladen
+  #     - wud.tag.include=^1\.\d+\.\d+$$
+  #     # "minor" = Minor- und Patch-Updates automatisch einspielen
+  #     - wud.trigger.include=dockercompose.auto:minor
+  #     - wud.link.template=https://nginx.org/en/CHANGES-$${major}.$${minor}
+
+  # Optionales Beispiel:  Updates nur per Klick in der WUD-Oberfläche
+  # nginx-manual:
+  #   image: nginx:1.26.0
+  #   container_name: nginx-manual
+  #   restart: unless-stopped
+  #   networks:
+  #     - proxy
+  #   labels:
+  #     - traefik.enable=true
+  #     - traefik.http.routers.nginx-manual.rule=Host(`${NGINX_MANUAL_HOST}`)
+  #     - traefik.http.routers.nginx-manual.entrypoints=websecure
+  #     # Nur echte Versionsnummern (keine -alpine, -perl, ...)
+  #     - wud.tag.include=^\d+\.\d+\.\d+$$
+  #     # Trigger ohne Automatik: Update-Button in der Oberfläche
+  #     - wud.trigger.include=dockercompose.manual
+  #     - wud.link.template=https://nginx.org/en/CHANGES-$${major}.$${minor}

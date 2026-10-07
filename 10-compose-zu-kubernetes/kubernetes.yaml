@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+
+  # Über dieses Label findet das Deployment die Pods.
+  selector:
+    matchLabels:
+      app: web
+
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.29-alpine
+          ports:
+            - name: http
+              containerPort: 80
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector:
+    app: web # alle Pods mit diesem Label bekommen die Anfragen
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  annotations:
+    # Compose-Label: entrypoints=websecure
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # Compose-Label: tls.certresolver=le
+    traefik.ingress.kubernetes.io/router.tls.certresolver: le
+spec:
+  rules:
+    - host: k8sdemo.k3s.example.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  name: http
+
+---
+# Firewall für die nginx-Pods: nur Traefik darf rein, alles andere wird blockiert.
+# Compose-Gegenstück: getrennte Netzwerke (nur wer im Netz "proxy" hängt, kommt ran).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-nur-traefik
+spec:
+  podSelector:
+    matchLabels:
+      app: web # gilt für diese Pods
+  policyTypes:
+    - Ingress # hier: eingehender Verkehr, nicht das Ingress-Objekt von oben
+  ingress:
+    - from:
+        # Beide Bedingungen in EINEM Eintrag = UND:
+        # Namespace kube-system und dort nur die Traefik-Pods
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - port: 80

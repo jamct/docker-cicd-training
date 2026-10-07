@@ -1,0 +1,23 @@
+name: webapp
+
+services:
+  app:
+    build: .
+    image: training/webapp:local
+    restart: unless-stopped
+    environment:
+      GREETING: ${GREETING}
+      APP_VERSION: ${APP_VERSION}
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.webapp.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.webapp.entrypoints=websecure
+      - traefik.http.services.webapp.loadbalancer.server.port=3000
+    deploy:
+      replicas: 2
+
+networks:
+  proxy:
+    external: true

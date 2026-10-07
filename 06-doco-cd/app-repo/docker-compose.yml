@@ -1,0 +1,17 @@
+# Die Werte für ${APP_HOST} und ${APP_MESSAGE} kommen aus .doco-cd.yml.
+services:
+  web:
+    image: traefik/whoami:v1.12
+    restart: unless-stopped
+    environment:
+      WHOAMI_NAME: ${APP_MESSAGE}
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.demo.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.demo.entrypoints=websecure
+
+networks:
+  proxy:
+    external: true

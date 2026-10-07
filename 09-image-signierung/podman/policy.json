@@ -1,0 +1,20 @@
+{
+  "default": [
+    {
+      "type": "insecureAcceptAnything"
+    }
+  ],
+  "transports": {
+    "docker": {
+      "ghcr.io/mein-account": [
+        {
+          "type": "sigstoreSigned",
+          "keyPath": "/etc/containers/cosign.pub",
+          "signedIdentity": {
+            "type": "matchRepository"
+          }
+        }
+      ]
+    }
+  }
+}

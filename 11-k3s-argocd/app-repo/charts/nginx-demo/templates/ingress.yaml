@@ -1,0 +1,55 @@
+# Routing von außen: "Anfragen für host gehen an den Service".
+# Das ist das Gegenstück zu den traefik.*-Labels in der Docker-Welt.
+# Je nach useIngressRoute in values.yaml wird eine der beiden Varianten erzeugt.
+{{- if not .Values.useIngressRoute }}
+# Variante 1: Standard-Kubernetes-Ingress, Traefik-Details per Annotation
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: nginx-demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    {{- if .Values.certResolver }}
+    traefik.ingress.kubernetes.io/router.tls.certresolver: {{ .Values.certResolver }}
+    {{- end }}
+spec:
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}
+                port:
+                  name: http
+{{- else }}
+# Variante 2: Traefik-eigene IngressRoute – dieselbe Regel-Syntax wie bei den Labels
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: nginx-demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`{{ .Values.host }}`)
+      kind: Rule
+      services:
+        - name: {{ .Release.Name }}
+          port: http
+  tls:
+    {{- if .Values.certResolver }}
+    certResolver: {{ .Values.certResolver }}
+    {{- else }}
+    {}
+    {{- end }}
+{{- end }}

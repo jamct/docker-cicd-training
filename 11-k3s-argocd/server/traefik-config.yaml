@@ -1,0 +1,39 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    # Alles auf Port 80 wird auf HTTPS umgeleitet
+    # (die Let's-Encrypt-Challenge funktioniert trotzdem).
+    ports:
+      web:
+        redirections:
+          entryPoint:
+            to: websecure
+            scheme: https
+            permanent: true
+
+    # Zertifikats-Resolver "le" – derselbe Name wie im Docker-Traefik aus 00.
+    certificatesResolvers:
+      le:
+        acme:
+          email: __ACME_EMAIL__
+          caServer: __ACME_CA_SERVER__
+          storage: /data/acme.json
+          httpChallenge:
+            entryPoint: web
+
+    # acme.json auf einem Volume speichern, damit die Zertifikate
+    # einen Neustart von Traefik überleben (sonst Rate-Limit bei Let's Encrypt).
+    persistence:
+      enabled: true
+      size: 128Mi
+
+    # Das Volume kann nur ein Pod gleichzeitig nutzen. Beim Update daher
+    # erst den alten Traefik-Pod stoppen, dann den neuen starten.
+    updateStrategy:
+      rollingUpdate:
+        maxUnavailable: 1
+        maxSurge: 0

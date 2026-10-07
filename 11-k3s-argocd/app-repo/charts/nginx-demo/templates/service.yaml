@@ -1,0 +1,20 @@
+# Service = fester Name und feste Adresse für alle Pods des Deployments.
+# Pods kommen und gehen, der Service bleibt – er verteilt die Anfragen.
+# (In Docker übernimmt das der Service-Name im Netz, z. B. "web".)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: nginx-demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  # Nur clusterintern erreichbar – von außen kommt man über Traefik
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nginx-demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
